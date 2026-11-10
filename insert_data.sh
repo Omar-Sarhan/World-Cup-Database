@@ -10,29 +10,34 @@ fi
 
 # Do not change code above this line. Use the PSQL variable above to query your database.
 
+
 $PSQL "TRUNCATE TABLE games, teams RESTART IDENTITY;" > /dev/null
 
 while IFS=',' read -r YEAR ROUND WINNER OPPONENT WINNER_GOALS OPPONENT_GOALS
 do
-  if [[ $YEAR == "year" || -z $YEAR ]]
+  if [[ "$YEAR" == "year" || -z "$YEAR" ]]
   then
     continue
   fi
 
-  WINNER_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$WINNER'")
-  if [[ -z $WINNER_ID ]]
-  then
-    $PSQL "INSERT INTO teams(name) VALUES('$WINNER')" > /dev/null
-    WINNER_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$WINNER'")
-  fi
+  $PSQL "
+    INSERT INTO teams(name)
+    VALUES ('$WINNER'), ('$OPPONENT')
+    ON CONFLICT (name) DO NOTHING;
 
-  OPPONENT_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$OPPONENT'")
-  if [[ -z $OPPONENT_ID ]]
-  then
-    $PSQL "INSERT INTO teams(name) VALUES('$OPPONENT')" > /dev/null
-    OPPONENT_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$OPPONENT'")
-  fi
-
-  $PSQL "INSERT INTO games(year, round, winner_id, opponent_id, winner_goals, opponent_goals) VALUES($YEAR, '$ROUND', $WINNER_ID, $OPPONENT_ID, $WINNER_GOALS, $OPPONENT_GOALS)" > /dev/null
+    INSERT INTO games(
+      year, round, winner_id, opponent_id,
+      winner_goals, opponent_goals
+    )
+    SELECT
+      $YEAR, '$ROUND',
+      w.team_id, o.team_id,
+      $WINNER_GOALS, $OPPONENT_GOALS
+    FROM teams w
+    CROSS JOIN teams o
+    WHERE w.name = '$WINNER'
+      AND o.name = '$OPPONENT';
+  " > /dev/null
 
 done < games.csv
+
